@@ -60,7 +60,11 @@
                 <option value="ewallet">E-Wallet</option>
               </select>
 
-              <input type="file" @change="onFileChange" />
+              <input
+                ref="fileInput"
+                type="file"
+                @change="onFileChange"
+              />
 
 
               <Button
@@ -223,6 +227,7 @@ const topupStore = useMitraTopupStore()
 const dashboardStore = useDashboardMitraStore()
 const { toast } = useToast()
 
+const fileInput = ref<HTMLInputElement | null>(null)
 const amount = ref<number | null>(null)
 const paymentMethod = ref('transfer')
 const proofFile = ref<File | null>(null)
@@ -275,12 +280,14 @@ const submitTopup = async () => {
     toast({
       title: 'Berhasil',
       description: 'Pengajuan top up berhasil dikirim',
+      variant: 'success'
     })
 
     // Reset form
     amount.value = null
     proofFile.value = null
     paymentMethod.value = 'transfer'
+    if (fileInput.value) fileInput.value.value = ''
 
     // Refresh data
     const currentPage = Number(route.query.page) || 1

@@ -193,34 +193,44 @@ const proceedToPassengerForm = () => {
 // Step 3: Book
 const bookTicket = async () => {
   if (!selectedSchedule.value) {
-    toast({
-      title: 'Error',
-      description: 'Jadwal tidak ditemukan, silakan pilih ulang',
-      variant: 'destructive'
-    })
+    toast({ title: 'Error', description: 'Jadwal tidak ditemukan, silakan pilih ulang', variant: 'destructive' })
     showPassengerForm.value = false
     return
   }
 
-  const isValid = passengers.value.every(p => p.name && p.identity_number)
-  if (!isValid) {
-    toast({
-      title: 'Error',
-      description: 'Lengkapi data semua penumpang',
-      variant: 'destructive'
-    })
+  // Validasi data penumpang per orang
+  for (let i = 0; i < passengers.value.length; i++) {
+    const p = passengers.value[i]
+    const seat = selectedSeatNumbers.value[i]
+    if (!p.name && !p.identity_number) {
+      toast({ title: 'Data Tidak Lengkap', description: `Penumpang ${i + 1} (Kursi ${seat}): nama dan NIK belum diisi`, variant: 'destructive' })
+      return
+    }
+    if (!p.name) {
+      toast({ title: 'Data Tidak Lengkap', description: `Penumpang ${i + 1} (Kursi ${seat}): nama belum diisi`, variant: 'destructive' })
+      return
+    }
+    if (!p.identity_number) {
+      toast({ title: 'Data Tidak Lengkap', description: `Penumpang ${i + 1} (Kursi ${seat}): NIK belum diisi`, variant: 'destructive' })
+      return
+    }
+    if (p.identity_number.length !== 16) {
+      toast({ title: 'NIK Tidak Valid', description: `Penumpang ${i + 1} (Kursi ${seat}): NIK harus 16 digit`, variant: 'destructive' })
+      return
+    }
+  }
+
+  // Validasi data pemesan
+  if (!customerName.value) {
+    toast({ title: 'Data Tidak Lengkap', description: 'Nama pemesan belum diisi', variant: 'destructive' })
+    return
+  }
+  if (!customerPhone.value) {
+    toast({ title: 'Data Tidak Lengkap', description: 'Nomor telepon pemesan belum diisi', variant: 'destructive' })
     return
   }
 
   try {
-    console.log('Selected schedule:', selectedSchedule.value)
-    console.log('Booking with data:', {
-      provider_code: selectedSchedule.value.provider_code,
-      travel_date: travel_date.value,
-      seats: selectedSeats.value,
-      passengers: passengers.value
-    })
-
     const result = await store.book({
       schedule_id: selectedSchedule.value.id,
       travel_date: travel_date.value,
@@ -231,31 +241,14 @@ const bookTicket = async () => {
       passengers: passengers.value
     })
 
-    console.log('Booking result:', result)
     currentTransaction.value = result
-    
-    // Close passenger form first
     showPassengerForm.value = false
-    
-    // Show success toast
-    toast({
-      title: 'Booking Berhasil',
-      description: `Kode: ${result.trx_code}`
-    })
 
-    // Wait a bit then open payment dialog
-    setTimeout(() => {
-      console.log('Opening payment dialog, currentTransaction:', currentTransaction.value)
-      showPaymentDialog.value = true
-      console.log('showPaymentDialog:', showPaymentDialog.value)
-    }, 300)
+    toast({ title: 'Booking Berhasil', description: `Kode transaksi: ${result.trx_code}`, variant: 'success' })
+
+    setTimeout(() => { showPaymentDialog.value = true }, 300)
   } catch (error: any) {
-    console.error('Booking error:', error)
-    toast({
-      title: 'Booking Gagal',
-      description: error.message || 'Terjadi kesalahan',
-      variant: 'destructive'
-    })
+    toast({ title: 'Booking Gagal', description: error.message || 'Terjadi kesalahan', variant: 'destructive' })
   }
 }
 
@@ -324,16 +317,23 @@ const issueTicket = async () => {
   }
 }
 
+const showCancelConfirmDialog = ref(false)
+
+const confirmCancel = () => {
+  showCancelConfirmDialog.value = true
+}
+
 // Cancel transaction
 const cancelTransaction = async () => {
-  if (!confirm('Yakin ingin membatalkan transaksi?')) return
+  showCancelConfirmDialog.value = false
 
   try {
     await store.cancel(currentTransaction.value.trx_code, 'Dibatalkan oleh user')
     
     toast({
       title: 'Transaksi Dibatalkan',
-      description: 'Refund akan diproses'
+      description: 'Transaksi berhasil dibatalkan',
+      variant: 'destructive'
     })
 
     showPaymentDialog.value = false
@@ -643,7 +643,11 @@ onMounted(() => {
                     </div>
                     <div class="text-right flex flex-col items-end gap-2">
                       <span class="text-xs px-2 py-1 rounded-full font-medium"
-                        :class="(schedule.available_seats ?? 0) > 5 ? 'bg-green-100 text-green-700' : (schedule.available_seats ?? 0) > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'"
+                        :class="
+                          (schedule.available_seats ?? 0) === 0 ? 'bg-red-100 text-red-700' :
+                          (schedule.available_seats / schedule.total_seats) <= 0.3 ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-green-100 text-green-700'
+                        "
                       >
                         {{ schedule.available_seats ?? 0 }} / {{ schedule.total_seats ?? '-' }} kursi
                       </span>
@@ -817,31 +821,62 @@ onMounted(() => {
 
           <!-- PAYMENT DIALOG -->
           <Dialog v-model:open="showPaymentDialog">
-            <DialogContent class="animate-in fade-in zoom-in duration-300">
-              <DialogTitle>Konfirmasi Pembayaran</DialogTitle>
-              <DialogDescription>Periksa detail transaksi Anda</DialogDescription>
+            <DialogContent class="max-w-sm">
+              <DialogTitle class="text-center text-lg font-semibold">Konfirmasi Pembayaran</DialogTitle>
+              <DialogDescription class="text-center text-xs text-muted-foreground">Periksa detail transaksi sebelum melanjutkan</DialogDescription>
               
-              <div v-if="currentTransaction" class="space-y-3 py-4">
-                <div class="flex justify-between p-3 bg-muted/50 rounded-lg">
-                  <span class="text-muted-foreground">Kode Transaksi</span>
-                  <span class="font-medium">{{ currentTransaction.trx_code }}</span>
+              <div v-if="currentTransaction" class="space-y-4 py-2">
+                <!-- Total Bayar - Hero -->
+                <div class="text-center py-4 border-b">
+                  <p class="text-xs text-muted-foreground uppercase tracking-widest mb-1">Total Pembayaran</p>
+                  <p class="text-4xl font-bold tracking-tight">Rp {{ currentTransaction.amount?.toLocaleString('id-ID') }}</p>
                 </div>
-                <div class="flex justify-between p-4 bg-primary/10 rounded-lg border-2 border-primary/20">
-                  <span class="text-muted-foreground font-medium">Total Bayar</span>
-                  <span class="font-bold text-2xl text-primary">Rp {{ currentTransaction.amount?.toLocaleString('id-ID') }}</span>
-                </div>
-                <div class="flex justify-between p-3 bg-muted/50 rounded-lg">
-                  <span class="text-muted-foreground">Status</span>
-                  <span class="font-medium px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">{{ currentTransaction.status }}</span>
+
+                <!-- Detail -->
+                <div class="space-y-2 text-sm">
+                  <div class="flex justify-between items-center py-1">
+                    <span class="text-muted-foreground">Kode Transaksi</span>
+                    <span class="font-mono font-medium text-xs">{{ currentTransaction.trx_code }}</span>
+                  </div>
+                  <div class="flex justify-between items-center py-1">
+                    <span class="text-muted-foreground">Status</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">{{ currentTransaction.status }}</span>
+                  </div>
+                  <div class="flex justify-between items-center py-1">
+                    <span class="text-muted-foreground">Rute</span>
+                    <span class="font-medium text-xs text-right">{{ selectedSchedule?.route }}</span>
+                  </div>
+                  <div class="flex justify-between items-center py-1">
+                    <span class="text-muted-foreground">Kursi</span>
+                    <span class="font-medium text-xs">{{ selectedSeatNumbers.join(', ') }}</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="flex gap-2">
-                <Button @click="payTransaction" :disabled="store.loading" class="flex-1 transition-all hover:scale-105">
+              <div class="flex flex-col gap-2 pt-2">
+                <Button @click="payTransaction" :disabled="store.loading" class="w-full">
                   {{ store.loading ? 'Memproses...' : 'Bayar Sekarang' }}
                 </Button>
-                <Button variant="destructive" @click="cancelTransaction" class="transition-all hover:scale-105">
-                  Batalkan
+                <Button variant="ghost" @click="confirmCancel" class="w-full text-destructive hover:text-destructive hover:bg-destructive/10">
+                  Batalkan Transaksi
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <!-- CANCEL CONFIRM DIALOG -->
+          <Dialog v-model:open="showCancelConfirmDialog">
+            <DialogContent class="max-w-xs text-center">
+              <DialogTitle class="text-center">Batalkan Transaksi?</DialogTitle>
+              <DialogDescription class="text-center">
+                Transaksi yang dibatalkan tidak dapat dikembalikan.
+              </DialogDescription>
+              <div class="flex flex-col gap-2 pt-2">
+                <Button variant="destructive" @click="cancelTransaction" class="w-full">
+                  Ya, Batalkan
+                </Button>
+                <Button variant="ghost" @click="showCancelConfirmDialog = false" class="w-full">
+                  Tidak, Kembali
                 </Button>
               </div>
             </DialogContent>

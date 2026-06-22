@@ -1,3 +1,4 @@
+//TicketPreview.vue
 <script setup lang="ts">
 import { ref } from 'vue'
 import TicketPrint from '@/components/TicketPrint.vue'

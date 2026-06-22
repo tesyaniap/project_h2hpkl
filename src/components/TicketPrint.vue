@@ -1,3 +1,4 @@
+//TicketPrint.vue
 <template>
   <div style="max-width:680px;margin:0 auto;padding:12px;font-family:Arial,sans-serif;">
 

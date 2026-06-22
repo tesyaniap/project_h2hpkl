@@ -14,7 +14,6 @@ class ApiService {
       baseURL: 'http://127.0.0.1:8000/api/v1',
       headers: {
         Accept: 'application/json',
-        // ❌ JANGAN set Content-Type di sini
       },
     })
 
